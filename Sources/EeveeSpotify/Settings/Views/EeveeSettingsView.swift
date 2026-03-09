@@ -91,7 +91,7 @@ struct EeveeSettingsView: View {
             
             //
             
-            Section(header: Text("Debug"), footer: Text("Export or clear the debug log. Useful for diagnosing logout issues.")) {
+            Section(header: Text("Debug"), footer: Text("Export or clear the debug log.")) {
                 Button {
                     let logPath = NSTemporaryDirectory() + "eeveespotify_debug.log"
                     guard FileManager.default.fileExists(atPath: logPath),

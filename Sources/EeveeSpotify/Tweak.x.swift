@@ -75,7 +75,7 @@ func activatePremiumPatchingGroup() {
 }
 
 struct EeveeSpotify: Tweak {
-    static let version = "6.5.3"
+    static let version = "6.6.0"
     
     static var hookTarget: VersionHookTarget {
         let version = Bundle.main.infoDictionary!["CFBundleShortVersionString"] as! String
@@ -96,79 +96,34 @@ struct EeveeSpotify: Tweak {
     }
     
     init() {
-        NSLog("[EeveeSpotify] Swift tweak initialization starting...")
-        writeDebugLog("Swift tweak initialization starting")
-
         // Activate session logout protection first (all versions)
-        for className in ["ARTWebSocketTransport", "ARTSRWebSocket",
-                          "SPTAuthSessionImplementation", "SPTAuthLegacyLoginControllerImplementation",
-                          "_TtC24Connectivity_SessionImpl18SessionServiceImpl",
-                          "_TtC24Connectivity_SessionImplP33_831B98CC28223E431E21CD27ADD20AF222OauthAccessTokenBridge",
-                          "SPTDataLoaderService",
-                          "NSURLSessionTask"] {
-            let exists = NSClassFromString(className) != nil
-            writeDebugLog("🔬 Class probe: \(className) = \(exists ? "EXISTS ✅" : "MISSING ❌")")
-        }
         SessionLogoutHookGroup().activate()
-        writeDebugLog("✅ SessionLogoutHookGroup activated (Ably + SPTAuth + TokenExpiry hooks live)")
-        writeDebugLog("🔒 Session protection: logout chain + token expiry + Ably + network blocking")
+        writeDebugLog("EeveeSpotify \(EeveeSpotify.version) initialized — hook target: \(EeveeSpotify.hookTarget)")
 
-        NSLog("[EeveeSpotify] ========================================")
-        NSLog("[EeveeSpotify] Detecting Spotify version...")
-        NSLog("[EeveeSpotify] Bundle version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
-        NSLog("[EeveeSpotify] Detected hook target: \(EeveeSpotify.hookTarget)")
-        NSLog("[EeveeSpotify] ========================================")
-        
-        writeDebugLog("Hook target: \(EeveeSpotify.hookTarget)")
-        
-        // For 9.1.x, activate premium patching and EXPERIMENTAL lyrics with enhanced logging
+        // For 9.1.x, activate premium patching and lyrics
         if EeveeSpotify.hookTarget == .v91 {
-            NSLog("[EeveeSpotify] ========================================")
-            NSLog("[EeveeSpotify] Spotify 9.1.x detected - EXPERIMENTAL MODE")
-            NSLog("[EeveeSpotify] ========================================")
-            writeDebugLog("9.1.x mode - testing lyrics with enhanced logging")
             
             // Premium patching
             if UserDefaults.patchType.isPatching {
-
-                writeDebugLog("Activating base premium patching for 9.1.x")
                 BasePremiumPatchingGroup().activate()
-                writeDebugLog("Base premium patching activated")
             }
             
-            // EXPERIMENTAL: Re-enable lyrics with comprehensive logging
             let lyricsEnabled = UserDefaults.lyricsSource.isReplacingLyrics
-            writeDebugLog("Lyrics setting check - isReplacingLyrics: \(lyricsEnabled), rawValue: \(UserDefaults.lyricsSource.rawValue)")
-
             
             if lyricsEnabled {
-                NSLog("[EeveeSpotify] ========================================")
-                NSLog("[EeveeSpotify] 🧪 EXPERIMENTAL: Activating lyrics for 9.1.x")
-                NSLog("[EeveeSpotify] Lyrics source: \(UserDefaults.lyricsSource.rawValue)")
-                NSLog("[EeveeSpotify] ========================================")
-                writeDebugLog("EXPERIMENTAL: Activating lyrics hooks for 9.1.x")
                 BaseLyricsGroup().activate()
-                writeDebugLog("Base lyrics hooks activated")
-
-                
-                // Use V91-specific lyrics group
                 V91LyricsGroup().activate()
-                writeDebugLog("V91 lyrics hooks activated for 9.1.x")
 
             } else {
 
             }
             
             // Settings integration
-
-            writeDebugLog("Activating universal settings integration for 9.1.x")
             UniversalSettingsIntegrationGroup().activate()
             // Also activate the banner for 9.1.x to ensure visibility if menu is missing
             // V91SettingsIntegrationGroup().activate()
-            writeDebugLog("Universal settings integration activated")
             
-            NSLog("[EeveeSpotify] Initialization complete for 9.1.x (with experimental lyrics)")
-            writeDebugLog("Initialization complete for 9.1.x")
+            NSLog("[EeveeSpotify] Initialization complete for 9.1.x")
             
             // Show startup popup with status - DISABLED FOR PRODUCTION
             // DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
@@ -211,60 +166,31 @@ struct EeveeSpotify: Tweak {
         
         // For other versions, activate all features normally
         if UserDefaults.experimentsOptions.showInstagramDestination {
-            NSLog("[EeveeSpotify] Activating Instagram destination hooks")
-            writeDebugLog("Activating Instagram destination hooks")
             InstgramDestinationGroup().activate()
-            writeDebugLog("Instagram hooks activated successfully")
         }
         
         if UserDefaults.darkPopUps {
-            NSLog("[EeveeSpotify] Activating dark popups hooks")
-            writeDebugLog("Activating dark popups hooks")
             DarkPopUps().activate()
-            writeDebugLog("Dark popups hooks activated successfully")
         }
         
         if UserDefaults.patchType.isPatching {
-            NSLog("[EeveeSpotify] Activating premium patching hooks")
-            writeDebugLog("Activating premium patching hooks")
             activatePremiumPatchingGroup()
-            writeDebugLog("Premium patching hooks activated successfully")
         }
         
         if UserDefaults.lyricsSource.isReplacingLyrics {
-            NSLog("[EeveeSpotify] Activating lyrics hooks")
-            writeDebugLog("Activating lyrics hooks")
             BaseLyricsGroup().activate()
-            writeDebugLog("Base lyrics hooks activated successfully")
-            
-            // Activate error handling hooks (not compatible with 9.1.x)
             LyricsErrorHandlingGroup().activate()
-            writeDebugLog("Lyrics error handling hooks activated successfully")
             
             if EeveeSpotify.hookTarget == .latest {
-                writeDebugLog("Activating modern lyrics hooks")
                 ModernLyricsGroup().activate()
-                writeDebugLog("Modern lyrics hooks activated successfully")
             }
             else {
-                writeDebugLog("Activating legacy lyrics hooks")
                 LegacyLyricsGroup().activate()
-                writeDebugLog("Legacy lyrics hooks activated successfully")
             }
         }
         
         // Always activate settings integration (except for 9.1.x which exits early above)
-        NSLog("[EeveeSpotify] Activating universal settings integration")
-        writeDebugLog("Activating universal settings integration")
         UniversalSettingsIntegrationGroup().activate()
-        writeDebugLog("Universal settings integration activated")
-        
-        NSLog("[EeveeSpotify] Activating legacy settings integration (fallback)")
-        writeDebugLog("Activating legacy settings integration (fallback)")
         SettingsIntegrationGroup().activate()
-        writeDebugLog("Legacy settings integration activated successfully")
-        
-        NSLog("[EeveeSpotify] Swift tweak initialization completed successfully")
-        writeDebugLog("Swift tweak initialization completed successfully")
     }
 }
