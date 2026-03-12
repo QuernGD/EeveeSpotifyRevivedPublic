@@ -1,66 +1,46 @@
 import Orion
 import Foundation
 
-private func isEnabled() -> Bool {
-    let ud = UserDefaults.standard
-    if ud.object(forKey: "com.trueshuffle.enabled") == nil {
-        ud.set(true, forKey: "com.trueshuffle.enabled")
-    }
-    return ud.bool(forKey: "com.trueshuffle.enabled")
+// MARK: - True Shuffle hook
+// Hooks QueueTrackShuffledList.shuffledTracks and re-randomizes
+// the weighted array Spotify returns using Fisher-Yates.
+
+private let kTrueShuffleEnabled = "com.trueshuffle.enabled"
+
+private func trueShuffleEnabled() -> Bool {
+    return UserDefaults.standard.object(forKey: kTrueShuffleEnabled) as? Bool ?? true
 }
 
+// Fisher-Yates in-place shuffle on whatever NSArray Spotify returns
+private func fisherYates(_ array: NSArray) -> NSArray {
+    let mutable = array.mutableCopy() as! NSMutableArray
+    var i = mutable.count - 1
+    while i > 0 {
+        let j = Int(arc4random_uniform(UInt32(i + 1)))
+        mutable.exchangeObject(at: i, with: j)
+        i -= 1
+    }
+    return mutable.copy() as! NSArray
+}
+
+// QueueTrackShuffledList is the Swift class that owns the play queue order.
+// Its mangled name is _TtC14Queue_ViewImpl22QueueTrackShuffledList.
+// We hook shuffledTracks — the getter Spotify calls to build the queue.
+class TrueShuffleQueueHook: ClassHook<NSObject> {
+    typealias Group = TrueShuffleGroup
+
+    static var targetName: String {
+        "_TtC14Queue_ViewImpl22QueueTrackShuffledList"
+    }
+
+    func shuffledTracks() -> NSArray {
+        let original = orig.shuffledTracks()
+        guard trueShuffleEnabled(), original.count > 1 else {
+            return original
+        }
+        return fisherYates(original)
+    }
+}
+
+// MARK: - Group (shared with existing TrueShuffle hooks in TrueShuffle.x.swift)
 struct TrueShuffleGroup: HookGroup {}
-
-// MARK: - SPTFreeShuffleRecommendationsService
-
-class RecsServiceHook: ClassHook<NSObject> {
-    typealias Group = TrueShuffleGroup
-    static let targetName = "SPTFreeShuffleRecommendationsService"
-
-    func shuffledRecommendations() -> AnyObject? {
-        return isEnabled() ? nil : orig.shuffledRecommendations()
-    }
-
-    func recommendedTracks() -> AnyObject? {
-        return isEnabled() ? nil : orig.recommendedTracks()
-    }
-
-    func loadRecommendations() {
-        if !isEnabled() { orig.loadRecommendations() }
-    }
-
-    func fetchRecommendations() {
-        if !isEnabled() { orig.fetchRecommendations() }
-    }
-}
-
-// MARK: - SPTSmartShuffleHandler
-
-class SmartShuffleHandlerHook: ClassHook<NSObject> {
-    typealias Group = TrueShuffleGroup
-    static let targetName = "SPTSmartShuffleHandler"
-
-    func isSmartShuffleAllowed() -> Bool {
-        return isEnabled() ? false : orig.isSmartShuffleAllowed()
-    }
-
-    func isSmartShuffleSupported() -> Bool {
-        return isEnabled() ? false : orig.isSmartShuffleSupported()
-    }
-
-    func isSmartShuffled() -> Bool {
-        return isEnabled() ? false : orig.isSmartShuffled()
-    }
-
-    func isSmartShuffleExperimentEnabled() -> Bool {
-        return isEnabled() ? false : orig.isSmartShuffleExperimentEnabled()
-    }
-
-    func canToggleSmartShuffle() -> Bool {
-        return isEnabled() ? false : orig.canToggleSmartShuffle()
-    }
-
-    func enableSmartShuffle() {
-        if !isEnabled() { orig.enableSmartShuffle() }
-    }
-}
