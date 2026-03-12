@@ -17,7 +17,7 @@ private func fisherYates(_ array: NSArray) -> NSArray {
     var i = mutable.count - 1
     while i > 0 {
         let j = Int(arc4random_uniform(UInt32(i + 1)))
-        mutable.exchangeObject(at: i, with: j)
+        mutable.exchangeObject(at: i, withObjectAt: j)
         i -= 1
     }
     return mutable.copy() as! NSArray
