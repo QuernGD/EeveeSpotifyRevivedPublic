@@ -1,25 +1,71 @@
-import SwiftUI
+import Orion
+import Foundation
 
-struct TrueShuffleSettingsView: View {
-@State var isEnabled = UserDefaults.standard.object(forKey: “com.trueshuffle.enabled”) == nil
-? true
-: UserDefaults.standard.bool(forKey: “com.trueshuffle.enabled”)
+private func isEnabled() -> Bool {
+let ud = UserDefaults.standard
+if ud.object(forKey: “com.trueshuffle.enabled”) == nil {
+ud.set(true, forKey: “com.trueshuffle.enabled”)
+}
+return ud.bool(forKey: “com.trueshuffle.enabled”)
+}
+
+struct TrueShuffleGroup: HookGroup {}
+
+// MARK: - SPTFreeShuffleRecommendationsService
+
+class RecsServiceHook: ClassHook<NSObject> {
+typealias Group = TrueShuffleGroup
+static let targetName = “SPTFreeShuffleRecommendationsService”
 
 ```
-var body: some View {
-    List {
-        Section(
-            footer: Text("Blocks Spotify's weighted recommendation shuffle and plays tracks in a purely random order. Takes effect immediately — no restart needed.")
-        ) {
-            Toggle("True Shuffle", isOn: $isEnabled)
-        }
-        .onChange(of: isEnabled) { value in
-            UserDefaults.standard.set(value, forKey: "com.trueshuffle.enabled")
-        }
+func shuffledRecommendations() -> AnyObject? {
+    return isEnabled() ? nil : orig.shuffledRecommendations()
+}
 
-        NonIPadSpacerView()
-    }
-    .listStyle(GroupedListStyle())
+func recommendedTracks() -> AnyObject? {
+    return isEnabled() ? nil : orig.recommendedTracks()
+}
+
+func loadRecommendations() {
+    if !isEnabled() { orig.loadRecommendations() }
+}
+
+func fetchRecommendations() {
+    if !isEnabled() { orig.fetchRecommendations() }
+}
+```
+
+}
+
+// MARK: - SPTSmartShuffleHandler
+
+class SmartShuffleHandlerHook: ClassHook<NSObject> {
+typealias Group = TrueShuffleGroup
+static let targetName = “SPTSmartShuffleHandler”
+
+```
+func isSmartShuffleAllowed() -> Bool {
+    return isEnabled() ? false : orig.isSmartShuffleAllowed()
+}
+
+func isSmartShuffleSupported() -> Bool {
+    return isEnabled() ? false : orig.isSmartShuffleSupported()
+}
+
+func isSmartShuffled() -> Bool {
+    return isEnabled() ? false : orig.isSmartShuffled()
+}
+
+func isSmartShuffleExperimentEnabled() -> Bool {
+    return isEnabled() ? false : orig.isSmartShuffleExperimentEnabled()
+}
+
+func canToggleSmartShuffle() -> Bool {
+    return isEnabled() ? false : orig.canToggleSmartShuffle()
+}
+
+func enableSmartShuffle() {
+    if !isEnabled() { orig.enableSmartShuffle() }
 }
 ```
 
