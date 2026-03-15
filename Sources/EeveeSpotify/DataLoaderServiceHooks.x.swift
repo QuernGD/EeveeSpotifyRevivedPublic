@@ -71,6 +71,12 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         task: URLSessionDataTask,
         didCompleteWithError error: Error?
     ) {
+        // TrueShuffle URL logging
+        if UserDefaults.standard.bool(forKey: "com.trueshuffle.logurls"),
+           let url = task.currentRequest?.url {
+            writeDebugLog("[TrueShuffle-URL] \(url.absoluteString)")
+        }
+
         // Capture authorization token from any request
         if let request = task.currentRequest,
            let headers = request.allHTTPHeaderFields,
@@ -110,7 +116,6 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             return
         }
         
-        
         do {
             if url.isLyrics {
                 
@@ -139,32 +144,12 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
                 
                 if result == .success, let data = customLyricsData {
                     respondWithCustomData(data, task: task, session: session)
-                    
-                    // Show popup indicating custom lyrics source - DISABLED FOR PRODUCTION
-                    // DispatchQueue.main.async {
-                    //     PopUpHelper.showPopUp(
-                    //         message: "🎵 Using \(UserDefaults.lyricsSource.description) lyrics",
-                    //         buttonText: "OK"
-                    //     )
-                    // }
-                    
-                    // Complete the request
                     orig.URLSession(session, task: task, didCompleteWithError: nil)
                 } else {
                     if result == .timedOut {
                     } else {
                     }
                     respondWithCustomData(buffer, task: task, session: session)
-                    
-                    // Show popup indicating fallback to original - DISABLED FOR PRODUCTION
-                    // DispatchQueue.main.async {
-                    //     PopUpHelper.showPopUp(
-                    //         message: result == .timedOut ? "⏱️ Using Spotify Original (timeout)" : "🎵 Using Spotify Original",
-                    //         buttonText: "OK"
-                    //     )
-                    // }
-                    
-                    // Complete the request
                     orig.URLSession(session, task: task, didCompleteWithError: nil)
                 }
                 return
