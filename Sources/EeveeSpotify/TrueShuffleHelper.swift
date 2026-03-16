@@ -4,18 +4,22 @@ import UIKit
 private let kClientId = "ceab4c6308de4133a70d1fbe643c4b8b"
 private let kClientSecret = "4f3fad0771e94f75880dbfdac858a038"
 
+// Use an ephemeral session to avoid any hook interference
+private let trueshuffleSession: URLSession = {
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForRequest = 15
+    return URLSession(configuration: config)
+}()
+
 private func fetchToken(completion: @escaping (String?) -> Void) {
     guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
+        writeDebugLog("[TrueShuffle] fetchToken: bad URL")
         completion(nil)
         return
     }
 
     let credentials = "\(kClientId):\(kClientSecret)"
-    guard let credentialsData = credentials.data(using: .utf8) else {
-        completion(nil)
-        return
-    }
-    let base64Credentials = credentialsData.base64EncodedString()
+    let base64Credentials = Data(credentials.utf8).base64EncodedString()
 
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
@@ -23,7 +27,16 @@ private func fetchToken(completion: @escaping (String?) -> Void) {
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     request.httpBody = "grant_type=client_credentials".data(using: .utf8)
 
-    URLSession.shared.dataTask(with: request) { data, _, _ in
+    trueshuffleSession.dataTask(with: request) { data, response, error in
+        if let error = error {
+            writeDebugLog("[TrueShuffle] fetchToken error: \(error.localizedDescription)")
+            completion(nil)
+            return
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
+        writeDebugLog("[TrueShuffle] fetchToken status=\(status) body=\(raw.prefix(200))")
+
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let token = json["access_token"] as? String else {
@@ -35,6 +48,8 @@ private func fetchToken(completion: @escaping (String?) -> Void) {
 }
 
 func playTrueShuffle(playlistURI: String) {
+    writeDebugLog("[TrueShuffle] playTrueShuffle called with URI: \(playlistURI)")
+
     let parts = playlistURI.components(separatedBy: ":")
     guard parts.count >= 3, parts[1] == "playlist" else {
         DispatchQueue.main.async {
@@ -43,6 +58,7 @@ func playTrueShuffle(playlistURI: String) {
         return
     }
     let playlistId = parts[2]
+    writeDebugLog("[TrueShuffle] playlistId=\(playlistId)")
 
     DispatchQueue.global(qos: .userInitiated).async {
         fetchToken { token in
@@ -52,8 +68,10 @@ func playTrueShuffle(playlistURI: String) {
                 }
                 return
             }
+            writeDebugLog("[TrueShuffle] got token, fetching tracks")
 
             fetchAllTracks(playlistId: playlistId, token: token) { trackURIs in
+                writeDebugLog("[TrueShuffle] got \(trackURIs.count) tracks")
                 guard !trackURIs.isEmpty else {
                     DispatchQueue.main.async {
                         PopUpHelper.showPopUp(message: "Could not fetch playlist tracks. Try again.", buttonText: "OK")
@@ -93,7 +111,11 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        trueshuffleSession.dataTask(with: request) { data, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
+            writeDebugLog("[TrueShuffle] tracks status=\(status) body=\(raw.prefix(200))")
+
             guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let items = json["items"] as? [[String: Any]] else {
