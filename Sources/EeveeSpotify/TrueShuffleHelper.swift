@@ -1,50 +1,75 @@
 import Foundation
 import UIKit
 
-func playTrueShuffle(playlistURI: String) {
-    guard let token = spotifyAccessToken else {
-        DispatchQueue.main.async {
-            PopUpHelper.showPopUp(message: "No Spotify token available. Open a playlist first.", buttonText: "OK")
-        }
+// Fetches an anonymous Spotify Web API token using the public client credentials flow
+// This works for reading any public playlist without needing the user's token
+private func fetchAnonymousToken(completion: @escaping (String?) -> Void) {
+    // Spotify's public client ID used by the web player — valid for read-only public data
+    let clientId = "d8a5ed958d274c2e8ee717e6a4b0971d"
+    
+    guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
+        completion(nil)
         return
     }
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    request.httpBody = "grant_type=client_credentials&client_id=\(clientId)".data(using: .utf8)
+    
+    URLSession.shared.dataTask(with: request) { data, _, _ in
+        guard let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let token = json["access_token"] as? String else {
+            completion(nil)
+            return
+        }
+        completion(token)
+    }.resume()
+}
 
-    writeDebugLog("[TrueShuffle] playlistURI=\(playlistURI)")
-    writeDebugLog("[TrueShuffle] token prefix=\(String(token.prefix(20)))")
-
+func playTrueShuffle(playlistURI: String) {
     let parts = playlistURI.components(separatedBy: ":")
     guard parts.count >= 3, parts[1] == "playlist" else {
         DispatchQueue.main.async {
-            PopUpHelper.showPopUp(message: "Bad URI format: \(playlistURI)", buttonText: "OK")
+            PopUpHelper.showPopUp(message: "Could not find current playlist. Make sure you are playing from a playlist.", buttonText: "OK")
         }
         return
     }
     let playlistId = parts[2]
-    writeDebugLog("[TrueShuffle] playlistId=\(playlistId)")
 
     DispatchQueue.global(qos: .userInitiated).async {
-        fetchAllTracks(playlistId: playlistId, token: token) { trackURIs, debugMessage in
-            guard !trackURIs.isEmpty else {
+        fetchAnonymousToken { token in
+            guard let token = token else {
                 DispatchQueue.main.async {
-                    PopUpHelper.showPopUp(message: "Could not fetch tracks. Debug: \(debugMessage)", buttonText: "OK")
+                    PopUpHelper.showPopUp(message: "Could not get Spotify token. Check your internet connection.", buttonText: "OK")
                 }
                 return
             }
 
-            let shuffled = fisherYatesShuffle(trackURIs)
-            let joined = shuffled.joined(separator: ",")
-            let tracksetURI = "spotify:trackset:TrueShuffle:\(joined)"
+            fetchAllTracks(playlistId: playlistId, token: token) { trackURIs in
+                guard !trackURIs.isEmpty else {
+                    DispatchQueue.main.async {
+                        PopUpHelper.showPopUp(message: "Could not fetch playlist tracks. Try again.", buttonText: "OK")
+                    }
+                    return
+                }
 
-            DispatchQueue.main.async {
-                if let url = URL(string: tracksetURI) {
-                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                let shuffled = fisherYatesShuffle(trackURIs)
+                let joined = shuffled.joined(separator: ",")
+                let tracksetURI = "spotify:trackset:TrueShuffle:\(joined)"
+
+                DispatchQueue.main.async {
+                    if let url = URL(string: tracksetURI) {
+                        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                    }
                 }
             }
         }
     }
 }
 
-private func fetchAllTracks(playlistId: String, token: String, completion: @escaping ([String], String) -> Void) {
+private func fetchAllTracks(playlistId: String, token: String, completion: @escaping ([String]) -> Void) {
     var allURIs: [String] = []
     var offset = 0
     let limit = 100
@@ -57,27 +82,16 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
             URLQueryItem(name: "offset", value: "\(offset)")
         ]
 
-        guard let url = components.url else { completion(allURIs, "Bad URL"); return }
-
-        writeDebugLog("[TrueShuffle] fetching: \(url.absoluteString)")
+        guard let url = components.url else { completion(allURIs); return }
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(allURIs, "Network error: \(error.localizedDescription)")
-                return
-            }
-
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let rawString = data.flatMap { String(data: $0, encoding: .utf8) } ?? "unreadable"
-            writeDebugLog("[TrueShuffle-API] status=\(statusCode) body=\(rawString.prefix(300))")
-
-            guard let data = data,
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let items = json["items"] as? [[String: Any]] else {
-                completion(allURIs, "Parse error, status: \(statusCode)")
+                completion(allURIs)
                 return
             }
 
@@ -93,7 +107,7 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
                 offset += limit
                 fetch()
             } else {
-                completion(allURIs, "OK, \(allURIs.count) tracks")
+                completion(allURIs)
             }
         }.resume()
     }
