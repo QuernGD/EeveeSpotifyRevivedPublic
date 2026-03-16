@@ -19,10 +19,10 @@ func playTrueShuffle(playlistURI: String) {
     let playlistId = parts[2]
 
     DispatchQueue.global(qos: .userInitiated).async {
-        fetchAllTracks(playlistId: playlistId, token: token) { trackURIs in
+        fetchAllTracks(playlistId: playlistId, token: token) { trackURIs, debugMessage in
             guard !trackURIs.isEmpty else {
                 DispatchQueue.main.async {
-                    PopUpHelper.showPopUp(message: "Could not fetch playlist tracks. Try again.", buttonText: "OK")
+                    PopUpHelper.showPopUp(message: "Could not fetch tracks. Debug: \(debugMessage)", buttonText: "OK")
                 }
                 return
             }
@@ -40,7 +40,7 @@ func playTrueShuffle(playlistURI: String) {
     }
 }
 
-private func fetchAllTracks(playlistId: String, token: String, completion: @escaping ([String]) -> Void) {
+private func fetchAllTracks(playlistId: String, token: String, completion: @escaping ([String], String) -> Void) {
     var allURIs: [String] = []
     var offset = 0
     let limit = 100
@@ -53,16 +53,31 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
             URLQueryItem(name: "offset", value: "\(offset)")
         ]
 
-        guard let url = components.url else { completion(allURIs); return }
+        guard let url = components.url else { completion(allURIs, "Bad URL"); return }
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                completion(allURIs, "Network error: \(error.localizedDescription)")
+                return
+            }
+
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+            guard let data = data else {
+                completion(allURIs, "No data, status: \(statusCode)")
+                return
+            }
+
+            // Log raw response for debugging
+            let rawString = String(data: data, encoding: .utf8) ?? "unreadable"
+            writeDebugLog("[TrueShuffle-API] status=\(statusCode) body=\(rawString.prefix(300))")
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let items = json["items"] as? [[String: Any]] else {
-                completion(allURIs)
+                completion(allURIs, "Parse error, status: \(statusCode), body: \(rawString.prefix(100))")
                 return
             }
 
@@ -78,7 +93,7 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
                 offset += limit
                 fetch()
             } else {
-                completion(allURIs)
+                completion(allURIs, "OK, \(allURIs.count) tracks")
             }
         }.resume()
     }
