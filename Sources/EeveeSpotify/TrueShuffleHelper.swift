@@ -1,54 +1,15 @@
 import Foundation
 import UIKit
 
-private let kClientId = "ceab4c6308de4133a70d1fbe643c4b8b"
-private let kClientSecret = "87a23b93d3ef4ab89b41007bd6a80f8b"
-
-// Use an ephemeral session to avoid any hook interference
-private let trueshuffleSession: URLSession = {
-    let config = URLSessionConfiguration.ephemeral
-    config.timeoutIntervalForRequest = 15
-    return URLSession(configuration: config)
-}()
-
-private func fetchToken(completion: @escaping (String?) -> Void) {
-    guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
-        writeDebugLog("[TrueShuffle] fetchToken: bad URL")
-        completion(nil)
+func playTrueShuffle(playlistURI: String) {
+    guard let token = spotifyAccessToken else {
+        DispatchQueue.main.async {
+            PopUpHelper.showPopUp(message: "No token yet. Play a song first, then try again.", buttonText: "OK")
+        }
         return
     }
 
-    let credentials = "\(kClientId):\(kClientSecret)"
-    let base64Credentials = Data(credentials.utf8).base64EncodedString()
-
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
-    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    request.httpBody = "grant_type=client_credentials".data(using: .utf8)
-
-    trueshuffleSession.dataTask(with: request) { data, response, error in
-        if let error = error {
-            writeDebugLog("[TrueShuffle] fetchToken error: \(error.localizedDescription)")
-            completion(nil)
-            return
-        }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
-        writeDebugLog("[TrueShuffle] fetchToken status=\(status) body=\(raw.prefix(200))")
-
-        guard let data = data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let token = json["access_token"] as? String else {
-            completion(nil)
-            return
-        }
-        completion(token)
-    }.resume()
-}
-
-func playTrueShuffle(playlistURI: String) {
-    writeDebugLog("[TrueShuffle] playTrueShuffle called with URI: \(playlistURI)")
+    writeDebugLog("[TrueShuffle] playTrueShuffle called, token prefix=\(String(token.prefix(20)))")
 
     let parts = playlistURI.components(separatedBy: ":")
     guard parts.count >= 3, parts[1] == "playlist" else {
@@ -61,32 +22,22 @@ func playTrueShuffle(playlistURI: String) {
     writeDebugLog("[TrueShuffle] playlistId=\(playlistId)")
 
     DispatchQueue.global(qos: .userInitiated).async {
-        fetchToken { token in
-            guard let token = token else {
+        fetchAllTracks(playlistId: playlistId, token: token) { trackURIs in
+            writeDebugLog("[TrueShuffle] got \(trackURIs.count) tracks")
+            guard !trackURIs.isEmpty else {
                 DispatchQueue.main.async {
-                    PopUpHelper.showPopUp(message: "Could not get Spotify token. Check your internet connection.", buttonText: "OK")
+                    PopUpHelper.showPopUp(message: "Could not fetch playlist tracks. Try again.", buttonText: "OK")
                 }
                 return
             }
-            writeDebugLog("[TrueShuffle] got token, fetching tracks")
 
-            fetchAllTracks(playlistId: playlistId, token: token) { trackURIs in
-                writeDebugLog("[TrueShuffle] got \(trackURIs.count) tracks")
-                guard !trackURIs.isEmpty else {
-                    DispatchQueue.main.async {
-                        PopUpHelper.showPopUp(message: "Could not fetch playlist tracks. Try again.", buttonText: "OK")
-                    }
-                    return
-                }
+            let shuffled = fisherYatesShuffle(trackURIs)
+            let joined = shuffled.joined(separator: ",")
+            let tracksetURI = "spotify:trackset:TrueShuffle:\(joined)"
 
-                let shuffled = fisherYatesShuffle(trackURIs)
-                let joined = shuffled.joined(separator: ",")
-                let tracksetURI = "spotify:trackset:TrueShuffle:\(joined)"
-
-                DispatchQueue.main.async {
-                    if let url = URL(string: tracksetURI) {
-                        UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                    }
+            DispatchQueue.main.async {
+                if let url = URL(string: tracksetURI) {
+                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
                 }
             }
         }
@@ -97,6 +48,10 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
     var allURIs: [String] = []
     var offset = 0
     let limit = 100
+
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForRequest = 15
+    let session = URLSession(configuration: config)
 
     func fetch() {
         var components = URLComponents(string: "https://api.spotify.com/v1/playlists/\(playlistId)/tracks")!
@@ -111,7 +66,7 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        trueshuffleSession.dataTask(with: request) { data, response, error in
+        session.dataTask(with: request) { data, response, error in
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
             writeDebugLog("[TrueShuffle] tracks status=\(status) body=\(raw.prefix(200))")
