@@ -11,32 +11,6 @@ private func isEnabled() -> Bool {
 
 struct TrueShuffleGroup: HookGroup {}
 
-// MARK: - Capture current playlist URI from network traffic
-// We sniff the scrollsita/watch-feed URLs which always contain play_context_uri
-// This gives us the current playlist URI without any extra hooks needed
-
-class TrueShuffleURLCaptureHook: ClassHook<NSObject> {
-    typealias Group = TrueShuffleGroup
-    static let targetName = "SPTDataLoaderService"
-
-    func URLSession(
-        _ session: URLSession,
-        task: URLSessionDataTask,
-        didCompleteWithError error: Error?
-    ) {
-        if let url = task.currentRequest?.url?.absoluteString,
-           let range = url.range(of: "play_context_uri=") {
-            let after = String(url[range.upperBound...])
-            let encoded = after.components(separatedBy: "&").first ?? after
-            if let decoded = encoded.removingPercentEncoding,
-               decoded.hasPrefix("spotify:playlist:") {
-                lastKnownPlaylistURI = decoded
-            }
-        }
-        orig.URLSession(session, task: task, didCompleteWithError: error)
-    }
-}
-
 // MARK: - SPTFreeShuffleRecommendationsService
 
 class RecsServiceHook: ClassHook<NSObject> {
