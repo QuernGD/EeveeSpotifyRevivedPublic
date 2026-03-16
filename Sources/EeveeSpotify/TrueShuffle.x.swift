@@ -9,28 +9,31 @@ private func isEnabled() -> Bool {
     return ud.bool(forKey: "com.trueshuffle.enabled")
 }
 
-private func isLogging() -> Bool {
-    return UserDefaults.standard.bool(forKey: "com.trueshuffle.logurls")
-}
-
 struct TrueShuffleGroup: HookGroup {}
 
-// MARK: - WebSocket frame logger
-// Logs Ably WebSocket frames when logging is enabled so we can find the shuffle seed message
+// MARK: - Capture current playlist URI from network traffic
+// We sniff the scrollsita/watch-feed URLs which always contain play_context_uri
+// This gives us the current playlist URI without any extra hooks needed
 
-class TrueShuffleWebSocketHook: ClassHook<NSObject> {
+class TrueShuffleURLCaptureHook: ClassHook<NSObject> {
     typealias Group = TrueShuffleGroup
-    static let targetName = "ARTSRWebSocket"
+    static let targetName = "SPTDataLoaderService"
 
-    func _handleFrameWithData(_ data: NSData, opCode code: Int) {
-        if isLogging(), code == 1,
-           let text = String(data: data as Data, encoding: .utf8) {
-            let lower = text.lowercased()
-            if lower.contains("shuffle") || lower.contains("context") || lower.contains("queue") || lower.contains("seed") {
-                writeDebugLog("[TrueShuffle-WS] \(text.prefix(500))")
+    func URLSession(
+        _ session: URLSession,
+        task: URLSessionDataTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let url = task.currentRequest?.url?.absoluteString,
+           let range = url.range(of: "play_context_uri=") {
+            let after = String(url[range.upperBound...])
+            let encoded = after.components(separatedBy: "&").first ?? after
+            if let decoded = encoded.removingPercentEncoding,
+               decoded.hasPrefix("spotify:playlist:") {
+                lastKnownPlaylistURI = decoded
             }
         }
-        orig._handleFrameWithData(data, opCode: code)
+        orig.URLSession(session, task: task, didCompleteWithError: error)
     }
 }
 
