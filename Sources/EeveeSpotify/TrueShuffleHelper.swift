@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 private let kClientId = "ceab4c6308de4133a70d1fbe643c4b8b"
-private let kClientSecret = "4f3fad0771e94f75880dbfdac858a038"
+private let kClientSecret = "87a23b93d3ef4ab89b41007bd6a80f8b"
 
 // Use an ephemeral session to avoid any hook interference
 private let trueshuffleSession: URLSession = {
