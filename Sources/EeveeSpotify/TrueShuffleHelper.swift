@@ -9,14 +9,18 @@ func playTrueShuffle(playlistURI: String) {
         return
     }
 
+    writeDebugLog("[TrueShuffle] playlistURI=\(playlistURI)")
+    writeDebugLog("[TrueShuffle] token prefix=\(String(token.prefix(20)))")
+
     let parts = playlistURI.components(separatedBy: ":")
     guard parts.count >= 3, parts[1] == "playlist" else {
         DispatchQueue.main.async {
-            PopUpHelper.showPopUp(message: "Could not find current playlist. Make sure you are playing from a playlist.", buttonText: "OK")
+            PopUpHelper.showPopUp(message: "Bad URI format: \(playlistURI)", buttonText: "OK")
         }
         return
     }
     let playlistId = parts[2]
+    writeDebugLog("[TrueShuffle] playlistId=\(playlistId)")
 
     DispatchQueue.global(qos: .userInitiated).async {
         fetchAllTracks(playlistId: playlistId, token: token) { trackURIs, debugMessage in
@@ -55,6 +59,8 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
 
         guard let url = components.url else { completion(allURIs, "Bad URL"); return }
 
+        writeDebugLog("[TrueShuffle] fetching: \(url.absoluteString)")
+
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
@@ -65,19 +71,13 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
             }
 
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-
-            guard let data = data else {
-                completion(allURIs, "No data, status: \(statusCode)")
-                return
-            }
-
-            // Log raw response for debugging
-            let rawString = String(data: data, encoding: .utf8) ?? "unreadable"
+            let rawString = data.flatMap { String(data: $0, encoding: .utf8) } ?? "unreadable"
             writeDebugLog("[TrueShuffle-API] status=\(statusCode) body=\(rawString.prefix(300))")
 
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let items = json["items"] as? [[String: Any]] else {
-                completion(allURIs, "Parse error, status: \(statusCode), body: \(rawString.prefix(100))")
+                completion(allURIs, "Parse error, status: \(statusCode)")
                 return
             }
 
