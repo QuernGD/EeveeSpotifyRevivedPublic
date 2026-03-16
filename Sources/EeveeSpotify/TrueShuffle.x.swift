@@ -9,35 +9,28 @@ private func isEnabled() -> Bool {
     return ud.bool(forKey: "com.trueshuffle.enabled")
 }
 
-// When true, ALL URLs passing through SPTDataLoaderService get logged
-// Toggle this via the com.trueshuffle.logurls UserDefault
 private func isLogging() -> Bool {
     return UserDefaults.standard.bool(forKey: "com.trueshuffle.logurls")
 }
 
 struct TrueShuffleGroup: HookGroup {}
 
-// MARK: - URL Logger
-// Hooks SPTDataLoaderService to log every URL when logging is enabled
-// Enable via: UserDefaults.standard.set(true, forKey: "com.trueshuffle.logurls")
-// Then trigger shuffle in Spotify, export the debug log from EeveeSpotify settings
+// MARK: - WebSocket frame logger
+// Logs Ably WebSocket frames when logging is enabled so we can find the shuffle seed message
 
-class URLLoggerHook: ClassHook<NSObject> {
+class TrueShuffleWebSocketHook: ClassHook<NSObject> {
     typealias Group = TrueShuffleGroup
-    static let targetName = "SPTDataLoaderService"
+    static let targetName = "ARTSRWebSocket"
 
-    func URLSession(
-        _ session: AnyObject,
-        task: AnyObject,
-        didCompleteWithError error: AnyObject?
-    ) {
-        if isLogging() {
-            if let task = task as? URLSessionDataTask,
-               let url = task.currentRequest?.url {
-                writeDebugLog("[TrueShuffle-URL] \(url.absoluteString)")
+    func _handleFrameWithData(_ data: NSData, opCode code: Int) {
+        if isLogging(), code == 1,
+           let text = String(data: data as Data, encoding: .utf8) {
+            let lower = text.lowercased()
+            if lower.contains("shuffle") || lower.contains("context") || lower.contains("queue") || lower.contains("seed") {
+                writeDebugLog("[TrueShuffle-WS] \(text.prefix(500))")
             }
         }
-        orig.URLSession(session, task: task, didCompleteWithError: error)
+        orig._handleFrameWithData(data, opCode: code)
     }
 }
 
