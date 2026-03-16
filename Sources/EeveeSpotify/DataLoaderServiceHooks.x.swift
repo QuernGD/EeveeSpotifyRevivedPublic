@@ -71,10 +71,15 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         task: URLSessionDataTask,
         didCompleteWithError error: Error?
     ) {
-        // TrueShuffle URL logging
-        if UserDefaults.standard.bool(forKey: "com.trueshuffle.logurls"),
-           let url = task.currentRequest?.url {
-            writeDebugLog("[TrueShuffle-URL] \(url.absoluteString)")
+        // Capture current playlist URI for TrueShuffle
+        if let urlString = task.currentRequest?.url?.absoluteString,
+           let range = urlString.range(of: "play_context_uri=") {
+            let after = String(urlString[range.upperBound...])
+            let encoded = after.components(separatedBy: "&").first ?? after
+            if let decoded = encoded.removingPercentEncoding,
+               decoded.hasPrefix("spotify:playlist:") {
+                lastKnownPlaylistURI = decoded
+            }
         }
 
         // Capture authorization token from any request
@@ -108,7 +113,6 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         }
         
         guard let buffer = URLSessionHelper.shared.obtainData(for: url) else {
-            // Customize 304 fallback: serve cached modified data when no buffer available
             if url.isCustomize, let cached = SPTDataLoaderServiceHook.cachedCustomizeData {
                 respondWithCustomData(cached, task: task, session: session)
                 orig.URLSession(session, task: task, didCompleteWithError: nil)
@@ -118,10 +122,7 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         
         do {
             if url.isLyrics {
-                
                 let originalLyrics = try? Lyrics(serializedBytes: buffer)
-                
-                // Try to fetch custom lyrics with a timeout
                 let semaphore = DispatchSemaphore(value: 0)
                 var customLyricsData: Data?
                 var customLyricsError: Error?
@@ -138,7 +139,6 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
                     semaphore.signal()
                 }
                 
-                // Wait up to 5 seconds for custom lyrics (cached LRCLIB responses are instant)
                 let timeout = DispatchTime.now() + .milliseconds(5000)
                 let result = semaphore.wait(timeout: timeout)
                 
@@ -200,7 +200,6 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         didReceiveResponse response: HTTPURLResponse,
         completionHandler handler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
-        // Handle customize 304 — prevent free-account data leaking from URLSession cache
         if let url = task.currentRequest?.url, url.isCustomize, response.statusCode == 304 {
             if let cached = SPTDataLoaderServiceHook.cachedCustomizeData {
                 let fakeResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "2.0", headerFields: [:])!
@@ -223,7 +222,6 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
         do {
             let data = try getLyricsDataForCurrentTrack(url.path)
             let okResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "2.0", headerFields: [:])!
-            
             orig.URLSession(session, dataTask: task, didReceiveResponse: okResponse, completionHandler: handler)
             respondWithCustomData(data, task: task, session: session)
         } catch {
@@ -240,7 +238,6 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             return
         }
 
-        // Suppress data for blocked endpoints (prevent original data from reaching handler)
         if shouldBlock(url) {
             return
         }
