@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 private let kClientId = "ceab4c6308de4133a70d1fbe643c4b8b"
-private let kRefreshToken = "AQBEFV8iMB0faN0Eh7QzwoaqpKoBi7AwSzIJTb2XBsYRulUAZUtLso-mx-H1QkgvvKELJjt5YGqCJRAiQQJ6unW9Z-jAZIryKT28CY7-1VqW4DZxUH0WohMmhnjSnXKOS7I"
+private let kRefreshToken = "AQBazYwkDehzsWMxU0KE9YI5_U9z2I3u_xgHFD38-VEWuz2z7hNe5uTuL1M_kJ9qs1Fl9cStk8Y72TXy0Ucqk8Ade5nXuUd1zk9cubGrkQFPNWRchm7egp2jBpJNxtCGQGs"
 
 private let trueshuffleSession: URLSession = {
     let config = URLSessionConfiguration.ephemeral
