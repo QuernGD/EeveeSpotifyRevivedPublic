@@ -1,22 +1,28 @@
 import Foundation
 import UIKit
 
-// Fetches an anonymous Spotify Web API token using the public client credentials flow
-// This works for reading any public playlist without needing the user's token
-private func fetchAnonymousToken(completion: @escaping (String?) -> Void) {
-    // Spotify's public client ID used by the web player — valid for read-only public data
-    let clientId = "d8a5ed958d274c2e8ee717e6a4b0971d"
-    
+private let kClientId = "ceab4c6308de4133a70d1fbe643c4b8b"
+private let kClientSecret = "4f3fad0771e94f75880dbfdac858a038"
+
+private func fetchToken(completion: @escaping (String?) -> Void) {
     guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
         completion(nil)
         return
     }
-    
+
+    let credentials = "\(kClientId):\(kClientSecret)"
+    guard let credentialsData = credentials.data(using: .utf8) else {
+        completion(nil)
+        return
+    }
+    let base64Credentials = credentialsData.base64EncodedString()
+
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
+    request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    request.httpBody = "grant_type=client_credentials&client_id=\(clientId)".data(using: .utf8)
-    
+    request.httpBody = "grant_type=client_credentials".data(using: .utf8)
+
     URLSession.shared.dataTask(with: request) { data, _, _ in
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -39,7 +45,7 @@ func playTrueShuffle(playlistURI: String) {
     let playlistId = parts[2]
 
     DispatchQueue.global(qos: .userInitiated).async {
-        fetchAnonymousToken { token in
+        fetchToken { token in
             guard let token = token else {
                 DispatchQueue.main.async {
                     PopUpHelper.showPopUp(message: "Could not get Spotify token. Check your internet connection.", buttonText: "OK")
