@@ -1,145 +1,212 @@
 import Foundation
 import UIKit
 
-private let kClientId = "ceab4c6308de4133a70d1fbe643c4b8b"
-private let kRefreshTokenKey = "com.trueshuffle.refreshToken"
-private let kInitialRefreshToken = "AQBazYwkDehzsWMxU0KE9YI5_U9z2I3u_xgHFD38-VEWuz2z7hNe5uTuL1M_kJ9qs1Fl9cStk8Y72TXy0Ucqk8Ade5nXuUd1zk9cubGrkQFPNWRchm7egp2jBpJNxtCGQGs"
-
-private func getRefreshToken() -> String {
-    return UserDefaults.standard.string(forKey: kRefreshTokenKey) ?? kInitialRefreshToken
-}
-
-private func saveRefreshToken(_ token: String) {
-    UserDefaults.standard.set(token, forKey: kRefreshTokenKey)
-}
-
-private let trueshuffleSession: URLSession = {
-    let config = URLSessionConfiguration.ephemeral
-    config.timeoutIntervalForRequest = 15
-    return URLSession(configuration: config)
-}()
-
-private func refreshAccessToken(completion: @escaping (String?) -> Void) {
-    guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
-        completion(nil); return
-    }
-    let currentRefreshToken = getRefreshToken()
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    request.httpBody = "grant_type=refresh_token&refresh_token=\(currentRefreshToken)&client_id=\(kClientId)".data(using: .utf8)
-
-    trueshuffleSession.dataTask(with: request) { data, response, error in
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
-        writeDebugLog("[TrueShuffle] refreshToken status=\(status) body=\(raw.prefix(200))")
-
-        guard let data = data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let accessToken = json["access_token"] as? String else {
-            completion(nil); return
-        }
-
-        if let newRefreshToken = json["refresh_token"] as? String {
-            saveRefreshToken(newRefreshToken)
-            writeDebugLog("[TrueShuffle] saved new refresh token")
-        }
-
-        completion(accessToken)
-    }.resume()
-}
+private let hardcodedTrackURIs: [String] = [
+    "spotify:track:2jTujnt0y344ai1rNOywgr",
+    "spotify:track:0m1KYWlT6LhFRBDVq9UNx4",
+    "spotify:track:3a8tAZFJxlmBwOtrf5L1oC",
+    "spotify:track:2YSzYUF3jWqb9YP9VXmpjE",
+    "spotify:track:5ngydCLbzCEdtu8SEOXhPU",
+    "spotify:track:79XrkTOfV1AqySNjVlygpW",
+    "spotify:track:5e574bhjycX1eH2l4Auage",
+    "spotify:track:27GmP9AWRs744SzKcpJsTZ",
+    "spotify:track:2bjwRfXMk4uRgOD9IBYl9h",
+    "spotify:track:6LxSe8YmdPxy095Ux6znaQ",
+    "spotify:track:2BcMwX1MPV6ZHP4tUT9uq6",
+    "spotify:track:05KOgYg8PGeJyyWBPi5ja8",
+    "spotify:track:0GR7iJLhj80KD5LkA14ZRn",
+    "spotify:track:5InOp6q2vvx0fShv3bzFLZ",
+    "spotify:track:17Q87zeXgsAi9iQQbMu9v0",
+    "spotify:track:65OVbaJR5O1RmwOQx0875b",
+    "spotify:track:46s57QULU02Voy0Kup6UEb",
+    "spotify:track:7aqfrAY2p9BUSiupwk3svU",
+    "spotify:track:1dUHF4RyMmMTveJ0Rby6Xm",
+    "spotify:track:4cRBqWBjuccCowYVHFlXK6",
+    "spotify:track:343YBumqHu19cGoGARUTsd",
+    "spotify:track:4BycRneKmOs6MhYG9THsuX",
+    "spotify:track:6s64FyS9n0XYbGMLH3LOWU",
+    "spotify:track:4c2xt1trwYZpMqPWY35Xi9",
+    "spotify:track:4BhGTc3Cgay2U1QcTS7vQe",
+    "spotify:track:7t1lBIr3WIEtqQEOdZFMUf",
+    "spotify:track:6n3HGiq4v35D6eFOSwqYuo",
+    "spotify:track:4eSGSqP2TZvvX0kadZZttM",
+    "spotify:track:74atKkOasLOVzvqB6mYgga",
+    "spotify:track:03L2AoiRbWhvt7BDMx1jUB",
+    "spotify:track:4RI9eX7jNcdaQOJifn7t6z",
+    "spotify:track:2SAqBLGA283SUiwJ3xOUVI",
+    "spotify:track:6jdOi5U5LBzQrc4c1VT983",
+    "spotify:track:3NxAG2ni1lLa8RKL6a0INc",
+    "spotify:track:047fCsbO4NdmwCBn8pcUXl",
+    "spotify:track:1HnhCD1u0c4dHSMazmWGyM",
+    "spotify:track:5Ggfa9cpkpfp5D6Rg0Yyw1",
+    "spotify:track:5Psnhdkyanjpgc2P8A5TSM",
+    "spotify:track:3O8NlPh2LByMU9lSRSHedm",
+    "spotify:track:6Z01gUquJsjJC67uNWm6P0",
+    "spotify:track:0sSRLXxknVTQDStgU1NqpY",
+    "spotify:track:2Gnsof1hvZzjE1xdLRpjtf",
+    "spotify:track:1wFFFzJ5EsKbBWZriAcubN",
+    "spotify:track:3eh51r6rFWAlGQRlHx9QnQ",
+    "spotify:track:2KvHC9z14GSl4YpkNMX384",
+    "spotify:track:7JXZq0JgG2zTrSOAgY8VMC",
+    "spotify:track:3cjF2OFRmip8spwZYQRKxP",
+    "spotify:track:3rE5PBReux0vbrIqbWFLnt",
+    "spotify:track:4s7QLoImIwmPi9L6dq1nVW",
+    "spotify:track:5mZJwWdxAOR4xUvSGZvvMU",
+    "spotify:track:7MjSipTto9QljYzZnloXOn",
+    "spotify:track:7F9cT6hIRhnFCYP6GKS0tf",
+    "spotify:track:6BdgtqiV3oXNqBikezwdvC",
+    "spotify:track:2WC4sK0ryyysQhtDok9Ytr",
+    "spotify:track:0wwPcA6wtMf6HUMpIRdeP7",
+    "spotify:track:0T0S3Ue6h1ozJRSu4A4uKs",
+    "spotify:track:2nOyI7h0Kn1vvrjf0tg9ss",
+    "spotify:track:2Q3jFbyE61mCjS3SkW4toJ",
+    "spotify:track:1C7KSXR2GVxknex6I4ANco",
+    "spotify:track:0MmqaSn9dzP5GHxZ933V4l",
+    "spotify:track:2KLwPaRDOB87XOYAT2fgxh",
+    "spotify:track:45pUWUeEWGoSdH6UF162G8",
+    "spotify:track:410TZrK18uRjtsTunG14cl",
+    "spotify:track:29YW2xXlo6Pc6M0SBTCXYN",
+    "spotify:track:5mPSyjLatqB00IkPqRlbTE",
+    "spotify:track:73IE87H0g2MBmdn41lkVto",
+    "spotify:track:3W3FVHEDetkiRkkGKDmdir",
+    "spotify:track:6MR5IBSNfDmiwnrlQpVw4w",
+    "spotify:track:4n4BflhWjCHIxrI4v7Xt9s",
+    "spotify:track:56NDFbD0tCUawnqeU2wcvv",
+    "spotify:track:3sMC6vfTTSa0mMAPTwzDVD",
+    "spotify:track:5ScbulRnixQ2XAdvrPMFjz",
+    "spotify:track:2HSmyk2qMN8WQjuGhaQgCk",
+    "spotify:track:40iJIUlhi6renaREYGeIDS",
+    "spotify:track:2vy9Ry1TNjCD85TiCbTz0r",
+    "spotify:track:1bDbXMyjaUIooNwFE9wn0N",
+    "spotify:track:2ZL7WZcjuYKi1KUDtp4kCC",
+    "spotify:track:31bsuKDOzFGzBAoXxtnAJm",
+    "spotify:track:3BtuIIrQlkujKPuWF2B85z",
+    "spotify:track:0FnxK9FEAQyPJ284QcieNb",
+    "spotify:track:2xUHiyGeGrWmmfv7NbDTWC",
+    "spotify:track:1cCXT1cErAY6tmIqHbodrt",
+    "spotify:track:1XsRwo2it6QHdV2OiT6IzF",
+    "spotify:track:4rmVZajAF7PkrCagGPHbqa",
+    "spotify:track:34tz0eDhGuFErIuW3q4mPX",
+    "spotify:track:34D6FJysnQioVingDKufuf",
+    "spotify:track:3F5CgOj3wFlRv51JsHbxhe",
+    "spotify:track:0w3Mfe4PIVjuFjJbe3OlYv",
+    "spotify:track:03rwnftfgpYVO6QDWOZcG6",
+    "spotify:track:3eP13S8D5m2cweMEg3ZDed",
+    "spotify:track:53KaP77tkliz36LPxWGlWK",
+    "spotify:track:17IBDpAl3J39swaoPlfGpp",
+    "spotify:track:2nibvvDdAQkVraYP00z2RS",
+    "spotify:track:4IcbUXrAzBtn6iUO1LP471",
+    "spotify:track:3wJyBmUfMRHeXkIwLBxToy",
+    "spotify:track:3IHt4j5uAEl7iBu8Utn985",
+    "spotify:track:73tgFzBug5Ifk1Retdtwk7",
+    "spotify:track:1560osUcXrnov6yuOjXvc1",
+    "spotify:track:1eroCliWpJrEu1V7VSObcO",
+    "spotify:track:1qIwin7JMVuX70qN6wD8ww",
+    "spotify:track:3YPEtDvQWStCH8eCq0Fl8Z",
+    "spotify:track:1ID1QFSNNxi0hiZCNcwjUC",
+    "spotify:track:6HfOzLLjsaXsehIFEsrxTk",
+    "spotify:track:1GpWY5RiInhezB8wGWs6oN",
+    "spotify:track:7jslhIiELQkgW9IHeYNOWE",
+    "spotify:track:1PIgY9ybyFT9uWLM5POYGY",
+    "spotify:track:4PA16FAl8LPmFmOhARawdV",
+    "spotify:track:3fpTMuD1u3gJlVI4FadVHs",
+    "spotify:track:6UjfByV1lDLW0SOVQA4NAi",
+    "spotify:track:3lkkkYc1wBj5l3FVlpqvP6",
+    "spotify:track:3QLjDkgLh9AOEHlhQtDuhs",
+    "spotify:track:3d8PDk3B4am5c6TsUCznUW",
+    "spotify:track:6wyhUr4Xw8z5uSy0AhoZfU",
+    "spotify:track:6wWaVoUOzLQJHd3bWAUpdZ",
+    "spotify:track:4u43I0LP2Xf85OAS85eG0R",
+    "spotify:track:5Nz7hI3cCOHmMR4vSLJ1An",
+    "spotify:track:2u9S9JJ6hTZS3Vf22HOZKg",
+    "spotify:track:433P7tDcIAi6NLnf4Sh6tI",
+    "spotify:track:7DL2F2bueQycqYjqsjHYjG",
+    "spotify:track:12d5QFwzh60IIHlsSnAvps",
+    "spotify:track:4wVOKKEHUJxHCFFNUWDn0B",
+    "spotify:track:0ZB5pdrM1leH58IgokDPZM",
+    "spotify:track:2MjQmsRAUArE2GDwjsVew3",
+    "spotify:track:24FUBxaAYSBlWsbSnEzDcn",
+    "spotify:track:2WP8G2pdddDmnh1xbfKBOI",
+    "spotify:track:6cEguiQecbXrFlsnMi2ysr",
+    "spotify:track:0wshkEEcJUQU33RSRBb5dv",
+    "spotify:track:7Ddk8FhoYKdsVoX9AOCPMm",
+    "spotify:track:2rKNlxKBZvpSpuIChBdHts",
+    "spotify:track:7l2nxyx7IkBX5orhkALg0V",
+    "spotify:track:2hcohLIysMxofYziluXCoX",
+    "spotify:track:2Na0z2gfN67Rzf0vp74Wi3",
+    "spotify:track:2YaDRtIlQiZ5WDDB2YuEOC",
+    "spotify:track:57GsLpRtEtrzcPGPop20rS",
+    "spotify:track:0b4M7hd7mzLTm99MrMeZsp",
+    "spotify:track:1U4mweNwisxNj23ffuC9gO",
+    "spotify:track:1D9XLqQp2YYiOxrr5KLb8K",
+    "spotify:track:4FRW5Nza1Ym91BGV4nFWXI",
+    "spotify:track:5lFDtgWsjRJu8fPOAyJIAK",
+    "spotify:track:2aTf0R0TQCJJKcb0ipszD2",
+    "spotify:track:3mvYQKm8h6M5K5h0nVPY9S",
+    "spotify:track:3aQem4jVGdhtg116TmJnHz",
+    "spotify:track:5xUpdXDvfUo1VA1yzgnqIP",
+    "spotify:track:0W4NhJhcqKCqEP2GIpDCDq",
+    "spotify:track:47Sa7pC00F7D5Z0i7HC5la",
+    "spotify:track:2B8Y5LaNSEkuB3LA9okArd",
+    "spotify:track:6MlGqWzDiLkZ0vmAEsisEk",
+    "spotify:track:0llA0pYA6GpGk7fTjew0wO",
+    "spotify:track:4haJoBPbPj9QFKNpp9e8kx",
+    "spotify:track:3kCwyvhvVTyehIzYN2I0nF",
+    "spotify:track:6Na5uKk5SsqZimk0hAWo8y",
+    "spotify:track:3lSR267IJfT54p0Gfuw7mi",
+    "spotify:track:4ckuS4Nj4FZ7i3Def3Br8W",
+    "spotify:track:6ZiRg59XSqBrA90P2gVnkR",
+    "spotify:track:124NFj84ppZ5pAxTuVQYCQ",
+    "spotify:track:5LZ0ZCRXrklIpnzn4Tcyde",
+    "spotify:track:6DCZcSspjsKoFjzjrWoCdn",
+    "spotify:track:2G7V7zsVDxg1yRsu7Ew9RJ",
+    "spotify:track:1zi7xx7UVEFkmKfv06H8x0",
+    "spotify:track:3dgQqOiQ9fCKVhNOedd2lf",
+    "spotify:track:0TlLq3lA83rQOYtrqBqSct",
+    "spotify:track:3CA9pLiwRIGtUBiMjbZmRw",
+    "spotify:track:6HSqyfGnsHYw9MmIpa9zlZ",
+    "spotify:track:42m3eP1JJhtzffal9B136J",
+    "spotify:track:3SnXwQUrvSacFziUYXTNKY",
+    "spotify:track:7v0hKO3RYhEXt2EPXf4AOS",
+    "spotify:track:75L0qdzRnhwV62UXoNq3pE",
+    "spotify:track:2G7QCDuRM7rTj0pX21e0xk",
+    "spotify:track:3cBUv0RIoEyAm2b7qimEY6",
+    "spotify:track:1ZyudLFv35SRvY5SvTZqJx",
+    "spotify:track:7udsBKuqnJ5csWTAkR0vEI",
+    "spotify:track:5dHpbFmZjWucrol0M7aNGU",
+    "spotify:track:5wTRsfZKeaQnQn8JeW8QYQ",
+    "spotify:track:6Kj17Afjo1OKJYpf5VzCeo",
+    "spotify:track:37Nqx7iavZpotJSDXZWbJ3",
+    "spotify:track:4Kz4RdRCceaA9VgTqBhBfa",
+    "spotify:track:1F6nHHDJyTHLgDDFj1ZZDt",
+    "spotify:track:4GqhG9rDuRUoNyDSMJ0Brq",
+    "spotify:track:4JeD0FGslDsMeeahEGZa2L",
+    "spotify:track:2xxb5zW09uwbgyLprALi9E",
+    "spotify:track:578CwfxpfH2HxlENOCHc2n",
+    "spotify:track:0AYt6NMyyLd0rLuvr0UkMH",
+    "spotify:track:3oZZfVvLJuDYc4Vn3A63Fw",
+    "spotify:track:7GeTsDIc5ykNB6lORO6Cee",
+    "spotify:track:2ZlABhxMMa43COmZ97kKsJ",
+    "spotify:track:1vbn9fEyw1IYhqgZJdu9ZB",
+    "spotify:track:1eCFz60zd7mAXgWLapPd9B",
+    "spotify:track:0nAZGkBGKQCXyaoSJfRhC1",
+    "spotify:track:11pEKMLmavDu8fxOB5QjbQ",
+    "spotify:track:50ceCGZ3oD3U5caQV5bP6f",
+    "spotify:track:7eYAHC0RbBF9eaqWzT34Aq",
+    "spotify:track:5H4mXWKcicuLKDn4Jy0sK7"
+]
 
 func playTrueShuffle(playlistURI: String) {
-    let parts = playlistURI.components(separatedBy: ":")
-    guard parts.count >= 3, parts[1] == "playlist" else {
-        DispatchQueue.main.async {
-            PopUpHelper.showPopUp(message: "Could not find current playlist. Make sure you are playing from a playlist.", buttonText: "OK")
-        }
-        return
-    }
-    let playlistId = parts[2]
-    writeDebugLog("[TrueShuffle] playlistId=\(playlistId)")
-
-    DispatchQueue.global(qos: .userInitiated).async {
-        refreshAccessToken { token in
-            guard let token = token else {
-                DispatchQueue.main.async {
-                    PopUpHelper.showPopUp(message: "Could not get Spotify token. Check your internet connection.", buttonText: "OK")
-                }
-                return
-            }
-            writeDebugLog("[TrueShuffle] got token, fetching tracks")
-
-            fetchAllTracks(playlistId: playlistId, token: token) { trackURIs in
-                writeDebugLog("[TrueShuffle] got \(trackURIs.count) tracks")
-                guard !trackURIs.isEmpty else {
-                    DispatchQueue.main.async {
-                        PopUpHelper.showPopUp(message: "Could not fetch playlist tracks. Try again.", buttonText: "OK")
-                    }
-                    return
-                }
-
-                let shuffled = fisherYatesShuffle(trackURIs)
-                let joined = shuffled.joined(separator: ",")
-                let tracksetURI = "spotify:trackset:TrueShuffle:\(joined)"
-                writeDebugLog("[TrueShuffle] opening trackset with \(shuffled.count) tracks")
-
-                DispatchQueue.main.async {
-                    if let url = URL(string: tracksetURI) {
-                        UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                    }
-                }
-            }
+    writeDebugLog("[TrueShuffle] playTrueShuffle called with \(hardcodedTrackURIs.count) hardcoded tracks")
+    let shuffled = fisherYatesShuffle(hardcodedTrackURIs)
+    let joined = shuffled.joined(separator: ",")
+    let tracksetURI = "spotify:trackset:TrueShuffle:\(joined)"
+    writeDebugLog("[TrueShuffle] opening trackset with \(shuffled.count) tracks")
+    DispatchQueue.main.async {
+        if let url = URL(string: tracksetURI) {
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
         }
     }
-}
-
-private func fetchAllTracks(playlistId: String, token: String, completion: @escaping ([String]) -> Void) {
-    var allURIs: [String] = []
-    var offset = 0
-    let limit = 100
-
-    func fetch() {
-        var components = URLComponents(string: "https://api.spotify.com/v1/playlists/\(playlistId)/tracks")!
-        components.queryItems = [
-            URLQueryItem(name: "fields", value: "items(item(uri)),next"),
-            URLQueryItem(name: "limit", value: "\(limit)"),
-            URLQueryItem(name: "offset", value: "\(offset)")
-        ]
-        guard let url = components.url else { completion(allURIs); return }
-
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-        trueshuffleSession.dataTask(with: request) { data, response, error in
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
-            writeDebugLog("[TrueShuffle] tracks status=\(status) body=\(raw.prefix(200))")
-
-            guard let data = data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let items = json["items"] as? [[String: Any]] else {
-                completion(allURIs); return
-            }
-
-            for item in items {
-                if let track = item["item"] as? [String: Any],
-                   let uri = track["uri"] as? String,
-                   uri.hasPrefix("spotify:track:") {
-                    allURIs.append(uri)
-                }
-            }
-
-            if let next = json["next"] as? String, !next.isEmpty {
-                offset += limit
-                fetch()
-            } else {
-                completion(allURIs)
-            }
-        }.resume()
-    }
-
-    fetch()
 }
 
 private func fisherYatesShuffle(_ array: [String]) -> [String] {
