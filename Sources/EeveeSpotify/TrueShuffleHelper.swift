@@ -2,7 +2,16 @@ import Foundation
 import UIKit
 
 private let kClientId = "ceab4c6308de4133a70d1fbe643c4b8b"
-private let kRefreshToken = "AQBazYwkDehzsWMxU0KE9YI5_U9z2I3u_xgHFD38-VEWuz2z7hNe5uTuL1M_kJ9qs1Fl9cStk8Y72TXy0Ucqk8Ade5nXuUd1zk9cubGrkQFPNWRchm7egp2jBpJNxtCGQGs"
+private let kRefreshTokenKey = "com.trueshuffle.refreshToken"
+private let kInitialRefreshToken = "AQBazYwkDehzsWMxU0KE9YI5_U9z2I3u_xgHFD38-VEWuz2z7hNe5uTuL1M_kJ9qs1Fl9cStk8Y72TXy0Ucqk8Ade5nXuUd1zk9cubGrkQFPNWRchm7egp2jBpJNxtCGQGs"
+
+private func getRefreshToken() -> String {
+    return UserDefaults.standard.string(forKey: kRefreshTokenKey) ?? kInitialRefreshToken
+}
+
+private func saveRefreshToken(_ token: String) {
+    UserDefaults.standard.set(token, forKey: kRefreshTokenKey)
+}
 
 private let trueshuffleSession: URLSession = {
     let config = URLSessionConfiguration.ephemeral
@@ -14,21 +23,29 @@ private func refreshAccessToken(completion: @escaping (String?) -> Void) {
     guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
         completion(nil); return
     }
+    let currentRefreshToken = getRefreshToken()
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    request.httpBody = "grant_type=refresh_token&refresh_token=\(kRefreshToken)&client_id=\(kClientId)".data(using: .utf8)
+    request.httpBody = "grant_type=refresh_token&refresh_token=\(currentRefreshToken)&client_id=\(kClientId)".data(using: .utf8)
 
     trueshuffleSession.dataTask(with: request) { data, response, error in
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? "nil"
         writeDebugLog("[TrueShuffle] refreshToken status=\(status) body=\(raw.prefix(200))")
+
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let token = json["access_token"] as? String else {
+              let accessToken = json["access_token"] as? String else {
             completion(nil); return
         }
-        completion(token)
+
+        if let newRefreshToken = json["refresh_token"] as? String {
+            saveRefreshToken(newRefreshToken)
+            writeDebugLog("[TrueShuffle] saved new refresh token")
+        }
+
+        completion(accessToken)
     }.resume()
 }
 
@@ -85,7 +102,7 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
     func fetch() {
         var components = URLComponents(string: "https://api.spotify.com/v1/playlists/\(playlistId)/tracks")!
         components.queryItems = [
-            URLQueryItem(name: "fields", value: "items(track(uri)),next"),
+            URLQueryItem(name: "fields", value: "items(item(uri)),next"),
             URLQueryItem(name: "limit", value: "\(limit)"),
             URLQueryItem(name: "offset", value: "\(offset)")
         ]
@@ -106,7 +123,7 @@ private func fetchAllTracks(playlistId: String, token: String, completion: @esca
             }
 
             for item in items {
-                if let track = item["track"] as? [String: Any],
+                if let track = item["item"] as? [String: Any],
                    let uri = track["uri"] as? String,
                    uri.hasPrefix("spotify:track:") {
                     allURIs.append(uri)
