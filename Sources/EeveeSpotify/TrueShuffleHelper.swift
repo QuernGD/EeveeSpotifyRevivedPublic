@@ -196,12 +196,18 @@ private let hardcodedTrackURIs: [String] = [
     "spotify:track:5H4mXWKcicuLKDn4Jy0sK7"
 ]
 
+// Max tracks per trackset URI. Spotify's URL scheme silently fails above ~25 tracks.
+// Each track URI is 36 chars; at 25 tracks the full URI is ~930 chars (well under limits).
+// Decrement this if Spotify still shows "can't open this link".
+private let maxTracksPerTrackset = 25
+
 func playTrueShuffle(playlistURI: String) {
     writeDebugLog("[TrueShuffle] playTrueShuffle called with \(hardcodedTrackURIs.count) hardcoded tracks")
     let shuffled = fisherYatesShuffle(hardcodedTrackURIs)
-    let joined = shuffled.joined(separator: ",")
+    let batch = Array(shuffled.prefix(maxTracksPerTrackset))
+    let joined = batch.joined(separator: ",")
     let tracksetURI = "spotify:trackset:TrueShuffle:\(joined)"
-    writeDebugLog("[TrueShuffle] opening trackset with \(shuffled.count) tracks")
+    writeDebugLog("[TrueShuffle] opening trackset with \(batch.count) tracks (capped from \(shuffled.count))")
     DispatchQueue.main.async {
         if let url = URL(string: tracksetURI) {
             UIApplication.shared.open(url, options: [:], completionHandler: nil)
