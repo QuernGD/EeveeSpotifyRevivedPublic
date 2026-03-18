@@ -330,31 +330,29 @@ class URLSessionTaskResumeHook: ClassHook<NSObject> {
             // login5 re-auths every ~3 min; blocking it causes a crash/panic loop.
             // Logout protection comes from blocking session destroy, DeleteToken, etc. below.
 
-            // Block outgoing DeleteToken/signup requests at network level
-            // Only block after initial startup (30s) to allow fresh login/signup
+            // Block outgoing logout/invalidation requests at network level.
+            // Use a 5s startup window (not 30s) to cover the login handshake while
+            // closing the race where a stale DeleteToken logs the user out on cold-start.
+            //
+            // apresolve and bootstrap/v1/bootstrap are intentionally NOT blocked here:
+            //   - apresolve resolves audio access points; blocking it breaks streaming on
+            //     network changes (e.g. when a VPN is toggled) and can cascade into logout.
+            //   - bootstrap is intercepted and MODIFIED by SPTDataLoaderServiceHook; if we
+            //     cancel it here instead, Spotify gets no response at all on mid-session
+            //     re-fetches, which loses the premium patch and can trigger free-tier fallback.
             if host.contains("spotify") || host.contains("spclient") {
-                if elapsed > 30 && path.contains("DeleteToken") {
+                if elapsed > 5 && path.contains("DeleteToken") {
                     writeDebugLog("[NET] Cancelled DeleteToken at \(elapsedInt)s")
                     task.cancel()
                     return
                 }
-                if elapsed > 30 && path.contains("signup/public") {
+                if elapsed > 5 && path.contains("signup/public") {
                     writeDebugLog("[NET] Cancelled signup/public at \(elapsedInt)s")
                     task.cancel()
                     return
                 }
-                if elapsed > 30 && path.contains("pses/screenconfig") {
+                if elapsed > 5 && path.contains("pses/screenconfig") {
                     writeDebugLog("[NET] Cancelled pses/screenconfig at \(elapsedInt)s")
-                    task.cancel()
-                    return
-                }
-                if elapsed > 30 && path.contains("bootstrap/v1/bootstrap") {
-                    writeDebugLog("[NET] Cancelled bootstrap re-fetch at \(elapsedInt)s")
-                    task.cancel()
-                    return
-                }
-                if elapsed > 30 && host.contains("apresolve") {
-                    writeDebugLog("[NET] Cancelled apresolve at \(elapsedInt)s")
                     task.cancel()
                     return
                 }
